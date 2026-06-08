@@ -1157,7 +1157,7 @@ local function SetWall(state)
         WallBtnSt.Color = Color3.fromRGB(60,60,60)
 
         if wallConn then
-            wallConn:Disconnect()
+                  wallConn:Disconnect()
             wallConn = nil
         end
 
@@ -1363,23 +1363,59 @@ local rubyAimMode       = nil  -- "central", "touch", "follow"
 local aimConn           = nil
 local aimBulletConn     = nil
 
--- Função auxiliar: cria o círculo RGB de mira no Drawing
-local function CreateAimCircle()
-    if aimCircle then pcall(function() aimCircle:Remove() end) end
-    local c = Drawing.new("Circle")
-    c.Thickness  = 2
-    c.Filled     = false
-    c.NumSides   = 64
-    c.Radius     = aimCircleSize
-    c.Visible    = false
-    aimCircle    = c
-    return c
+-- Círculo de mira via GUI (compatível com Delta e qualquer executor)
+local AimCircleGui = Instance.new("Frame")
+AimCircleGui.Name                   = "RubyAimCircle"
+AimCircleGui.BackgroundTransparency = 1
+AimCircleGui.BorderSizePixel        = 0
+AimCircleGui.ZIndex                 = 10
+AimCircleGui.Visible                = false
+AimCircleGui.AnchorPoint            = Vector2.new(0.5, 0.5)
+AimCircleGui.Parent                 = ScreenGui
+Instance.new("UICorner", AimCircleGui).CornerRadius = UDim.new(1, 0)
+local AimCircleStroke = Instance.new("UIStroke")
+AimCircleStroke.Thickness       = 2.5
+AimCircleStroke.Transparency    = 0
+AimCircleStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+AimCircleStroke.Parent          = AimCircleGui
+
+-- Helpers: movem e mostram/escondem o círculo GUI
+local function SetCirclePos(vec2)
+    local d = aimCircleSize * 2
+    AimCircleGui.Size     = UDim2.fromOffset(d, d)
+    AimCircleGui.Position = UDim2.fromOffset(vec2.X, vec2.Y)
 end
+local function SetCircleVisible(v)
+    AimCircleGui.Visible = v
+end
+
+-- Substitui o Drawing: apenas marca aimCircle como ativo (flag booleana)
+local function CreateAimCircle()
+    local vp = workspace.CurrentCamera.ViewportSize
+    SetCirclePos(Vector2.new(vp.X / 2, vp.Y / 2))
+    SetCircleVisible(false)
+    aimCircle = true
+end
+
+-- Posição persistente do ponteiro (mouse/touch), atualizada por eventos dedicados
+local aimPointerPos = nil
+
+UIS.InputChanged:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseMovement then
+        aimPointerPos = Vector2.new(inp.Position.X, inp.Position.Y)
+    end
+end)
+UIS.TouchMoved:Connect(function(touch, _)
+    aimPointerPos = Vector2.new(touch.Position.X, touch.Position.Y)
+end)
+UIS.TouchStarted:Connect(function(touch, _)
+    aimPointerPos = Vector2.new(touch.Position.X, touch.Position.Y)
+end)
 
 -- Atualiza cor RGB do círculo a cada frame
 RunService.Heartbeat:Connect(function()
-    if aimCircle and aimCircle.Visible then
-        aimCircle.Color = getRGBColor(0)
+    if AimCircleGui.Visible then
+        AimCircleStroke.Color = getRGBColor(0)
     end
 end)
 
@@ -1499,12 +1535,12 @@ local aimModeNames  = {"Ruby Central", "Ruby Follow", "Ruby Touch"}
 local function SetAimMode(modeName)
     -- Desativa modo anterior
     if aimConn then aimConn:Disconnect() aimConn = nil end
-    if aimCircle then aimCircle.Visible = false end
+    SetCircleVisible(false)
 
     if rubyAimMode == modeName then
         -- Clicou no ativo: desliga
         rubyAimMode = nil
-        if aimCircle then pcall(function() aimCircle:Remove() end) aimCircle = nil end
+        aimCircle = nil
         for _, r in pairs(aimModeRows) do
             r.dot.BackgroundColor3 = Color3.fromRGB(40,40,40)
         end
@@ -1524,63 +1560,47 @@ local function SetAimMode(modeName)
     local cy  = vp.Y / 2
 
     if modeName == "Ruby Central" then
-        -- Círculo fixo no centro
-        aimCircle.Position = Vector2.new(cx, cy)
-        aimCircle.Visible  = true
+        -- Círculo fixo no centro (apenas visual, não rotaciona o personagem)
+        SetCirclePos(Vector2.new(cx, cy))
+        SetCircleVisible(true)
         aimConn = RunService.Heartbeat:Connect(function()
-            local center = Vector2.new(cx, cy)
-            local target = GetNearestInCircle(center, aimCircleSize)
-            if target then RedirectToTarget(target) end
+            -- Ruby Central: só mantém o círculo visível no centro, sem aimbot
         end)
 
     elseif modeName == "Ruby Follow" then
-        -- Círculo no centro; câmera segue o jogador mais próximo
-        aimCircle.Position = Vector2.new(cx, cy)
-        aimCircle.Visible  = true
+        -- Círculo no centro; câmera segue o jogador mais próximo dentro do raio
+        SetCirclePos(Vector2.new(cx, cy))
+        SetCircleVisible(true)
         aimConn = RunService.Heartbeat:Connect(function()
             local center = Vector2.new(cx, cy)
             local target = GetNearestInCircle(center, aimCircleSize)
             if target then
-                RedirectToTarget(target)
-                -- Suaviza a câmera para olhar ao alvo
                 local char = target.Character
                 if char then
                     local hrp = char:FindFirstChild("HumanoidRootPart")
                     if hrp then
-                        local myChar = Player.Character
-                        if myChar then
-                            local myHRP = myChar:FindFirstChild("HumanoidRootPart")
-                            if myHRP then
-                                workspace.CurrentCamera.CFrame = CFrame.lookAt(
-                                    workspace.CurrentCamera.CFrame.Position,
-                                    hrp.Position
-                                )
-                            end
-                        end
+                        workspace.CurrentCamera.CFrame = CFrame.lookAt(
+                            workspace.CurrentCamera.CFrame.Position,
+                            hrp.Position
+                        )
                     end
                 end
             end
         end)
 
     elseif modeName == "Ruby Touch" then
-        -- Círculo segue o mouse/touch
-        aimCircle.Visible = true
-        aimCircle.Position = Vector2.new(cx, cy)
+        -- Círculo segue o dedo (touch) ou cursor (mouse) via listener persistente
+        -- Inicializa com posição atual do mouse caso ainda não haja evento touch
+        if not aimPointerPos then
+            local mp = UIS:GetMouseLocation()
+            aimPointerPos = Vector2.new(mp.X, mp.Y)
+        end
+        SetCirclePos(aimPointerPos)
+        SetCircleVisible(true)
         aimConn = RunService.Heartbeat:Connect(function()
-            local mousePos
-            if UIS.TouchEnabled then
-                local touches = UIS:GetTouches()
-                if #touches > 0 then
-                    mousePos = Vector2.new(touches[1].Position.X, touches[1].Position.Y)
-                else
-                    mousePos = Vector2.new(cx, cy)
-                end
-            else
-                local mp = UIS:GetMouseLocation()
-                mousePos = Vector2.new(mp.X, mp.Y)
-            end
-            aimCircle.Position = mousePos
-            local target = GetNearestInCircle(mousePos, aimCircleSize)
+            local curPos = aimPointerPos or Vector2.new(cx, cy)
+            SetCirclePos(curPos)
+            local target = GetNearestInCircle(curPos, aimCircleSize)
             if target then RedirectToTarget(target) end
         end)
     end
@@ -1760,7 +1780,10 @@ local function UpdateSlider(pct)
     local vp = workspace.CurrentCamera.ViewportSize
     local maxR = math.min(vp.X, vp.Y) / 2
     aimCircleSize = math.max(10, math.floor(pct * maxR))
-    if aimCircle then aimCircle.Radius = aimCircleSize end
+    if aimCircle then
+        local d = aimCircleSize * 2
+        AimCircleGui.Size = UDim2.fromOffset(d, d)
+    end
 end
 
 UpdateSlider(0.5)
@@ -2236,4 +2259,4 @@ MaxBtn.MouseButton1Click:Connect(function()
     Sidebar.Visible = true
     Content.Visible = true
     TweenService:Create(Main, TweenInfo.new(0.25,Enum.EasingStyle.Quart), {Size=FullSize}):Play()
-end) 
+end)
