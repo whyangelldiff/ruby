@@ -572,7 +572,7 @@ local function PopulateTeams()
         local dot = Instance.new("Frame")
         dot.Size            = UDim2.fromOffset(10,10)
         dot.Position        = UDim2.new(1,-20,0.5,-5)
-        dot.BackgroundColor3= IgnoredTeams[tn] and Color3.fromRGB(180,0,0) or Color3.fromRGB(40,40,40)
+                dot.BackgroundColor3= IgnoredTeams[tn] and Color3.fromRGB(180,0,0) or Color3.fromRGB(40,40,40)
         dot.BorderSizePixel = 0
         dot.Parent          = row
         Instance.new("UICorner", dot).CornerRadius = UDim.new(1,0)
@@ -708,13 +708,15 @@ local function BuildPlayerRows(filter)
 
     local count = 0
     for _, plr in ipairs(Players:GetPlayers()) do
-        if plr == Player then continue end
+        if plr ~= Player then
         local name = plr.Name
+        local showRow = true
         if filter and filter ~= "" then
             if not string.find(string.lower(name), string.lower(filter), 1, true) then
-                continue
+                showRow = false
             end
         end
+        if showRow then
         count = count + 1
 
         local row = Instance.new("Frame")
@@ -761,6 +763,8 @@ local function BuildPlayerRows(filter)
                 dot.BackgroundColor3 = Color3.fromRGB(180,0,0)
             end
         end)
+        end -- if showRow
+        end -- if plr ~= Player
     end
 
     PlayerDropdown.Size = UDim2.new(1,-12,0, math.max(count*(28+4)+40, 50))
@@ -1157,7 +1161,7 @@ local function SetWall(state)
         WallBtnSt.Color = Color3.fromRGB(60,60,60)
 
         if wallConn then
-                  wallConn:Disconnect()
+                      wallConn:Disconnect()
             wallConn = nil
         end
 
@@ -1400,16 +1404,17 @@ end
 -- Posição persistente do ponteiro (mouse/touch), atualizada por eventos dedicados
 local aimPointerPos = nil
 
+-- Captura posição do mouse/touch via InputChanged e InputBegan (compatível com Delta)
 UIS.InputChanged:Connect(function(inp)
-    if inp.UserInputType == Enum.UserInputType.MouseMovement then
+    if inp.UserInputType == Enum.UserInputType.MouseMovement
+    or inp.UserInputType == Enum.UserInputType.Touch then
         aimPointerPos = Vector2.new(inp.Position.X, inp.Position.Y)
     end
 end)
-UIS.TouchMoved:Connect(function(touch, _)
-    aimPointerPos = Vector2.new(touch.Position.X, touch.Position.Y)
-end)
-UIS.TouchStarted:Connect(function(touch, _)
-    aimPointerPos = Vector2.new(touch.Position.X, touch.Position.Y)
+UIS.InputBegan:Connect(function(inp, gpe)
+    if inp.UserInputType == Enum.UserInputType.Touch then
+        aimPointerPos = Vector2.new(inp.Position.X, inp.Position.Y)
+    end
 end)
 
 -- Atualiza cor RGB do círculo a cada frame
@@ -1424,21 +1429,25 @@ local function GetNearestInCircle(circleCenter, radius)
     local best, bestDist = nil, math.huge
     local vp = workspace.CurrentCamera.ViewportSize
     for _, plr in ipairs(Players:GetPlayers()) do
-        if plr == Player then continue end
-        if AimIgnoredPlayers[plr.Name] then continue end
-        if plr.Team and AimIgnoredTeams[plr.Team.Name] then continue end
-        local char = plr.Character
-        if not char then continue end
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if not hrp or not hum or hum.Health <= 0 then continue end
-        local screenPos, onScreen = workspace.CurrentCamera:WorldToViewportPoint(hrp.Position)
-        if not onScreen then continue end
-        local sp2 = Vector2.new(screenPos.X, screenPos.Y)
-        local dist = (sp2 - circleCenter).Magnitude
-        if dist <= radius and dist < bestDist then
-            bestDist = dist
-            best     = plr
+        if plr ~= Player
+        and not AimIgnoredPlayers[plr.Name]
+        and not (plr.Team and AimIgnoredTeams[plr.Team.Name]) then
+            local char = plr.Character
+            if char then
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if hrp and hum and hum.Health > 0 then
+                    local screenPos, onScreen = workspace.CurrentCamera:WorldToViewportPoint(hrp.Position)
+                    if onScreen then
+                        local sp2 = Vector2.new(screenPos.X, screenPos.Y)
+                        local dist = (sp2 - circleCenter).Magnitude
+                        if dist <= radius and dist < bestDist then
+                            bestDist = dist
+                            best     = plr
+                        end
+                    end
+                end
+            end
         end
     end
     return best
@@ -2077,13 +2086,15 @@ local function BuildAimPlayerRows(filter)
 
     local count = 0
     for _, plr in ipairs(Players:GetPlayers()) do
-        if plr == Player then continue end
+        if plr ~= Player then
         local name = plr.Name
+        local showRow = true
         if filter and filter ~= "" then
             if not string.find(string.lower(name), string.lower(filter), 1, true) then
-                continue
+                showRow = false
             end
         end
+        if showRow then
         count = count + 1
 
         local row = Instance.new("Frame")
@@ -2130,6 +2141,8 @@ local function BuildAimPlayerRows(filter)
                 dot.BackgroundColor3 = Color3.fromRGB(180,0,0)
             end
         end)
+        end -- if showRow
+        end -- if plr ~= Player
     end
 
     AimPlrDropdown.Size = UDim2.new(1,-12,0, math.max(count*(28+4)+40, 50))
@@ -2236,6 +2249,228 @@ UIS.InputChanged:Connect(function(Input)
         )
     end
 end)
+
+--// Ruby Touch Ball — Bola RGB Vazada que Segue o Touch/Mouse
+--// Compatível com o Element Ruby Mobile Edition
+--// Coloque dentro do mesmo LocalScript, após o bloco de DRAG
+
+-- ============================================================
+-- RUBY TOUCH BALL — BOLA VAZADA RGB
+-- ============================================================
+
+local TouchBall = Instance.new("Frame")
+TouchBall.Name              = "RubyTouchBall"
+TouchBall.Size              = UDim2.fromOffset(48, 48)
+TouchBall.AnchorPoint       = Vector2.new(0.5, 0.5)
+TouchBall.Position          = UDim2.new(0.5, 0, 0.5, 0)
+TouchBall.BackgroundTransparency = 1   -- VAZADO: fundo invisível
+TouchBall.BorderSizePixel   = 0
+TouchBall.ZIndex            = 100
+TouchBall.Visible           = false
+TouchBall.Parent            = ScreenGui
+
+-- Forma circular
+Instance.new("UICorner", TouchBall).CornerRadius = UDim.new(1, 0)
+
+-- Contorno RGB (UIStroke = bola vazada com borda colorida)
+local BallStroke = Instance.new("UIStroke")
+BallStroke.Thickness    = 2.5
+BallStroke.Transparency = 0
+BallStroke.Color        = Color3.new(1, 0, 0)
+BallStroke.Parent       = TouchBall
+
+-- Brilho interno suave (halo)
+local BallGlow = Instance.new("Frame")
+BallGlow.Name               = "Glow"
+BallGlow.Size               = UDim2.new(1, 0, 1, 0)
+BallGlow.BackgroundColor3   = Color3.new(1, 0, 0)
+BallGlow.BackgroundTransparency = 0.88
+BallGlow.BorderSizePixel    = 0
+BallGlow.ZIndex             = 99
+BallGlow.Parent             = TouchBall
+Instance.new("UICorner", BallGlow).CornerRadius = UDim.new(1, 0)
+
+-- Ponto central (micrinha)
+local BallDot = Instance.new("Frame")
+BallDot.Name              = "Dot"
+BallDot.Size              = UDim2.fromOffset(5, 5)
+BallDot.AnchorPoint       = Vector2.new(0.5, 0.5)
+BallDot.Position          = UDim2.new(0.5, 0, 0.5, 0)
+BallDot.BackgroundColor3  = Color3.new(1, 1, 1)
+BallDot.BackgroundTransparency = 0.3
+BallDot.BorderSizePixel   = 0
+BallDot.ZIndex            = 101
+BallDot.Parent            = TouchBall
+Instance.new("UICorner", BallDot).CornerRadius = UDim.new(1, 0)
+
+-- ============================================================
+-- ESTADO DO TOUCH / MOUSE
+-- ============================================================
+local isTouching   = false
+local currentPos   = Vector2.new(0, 0)
+
+-- Alvo de posição para interpolação suave
+local targetPos    = Vector2.new(0, 0)
+local smoothPos    = Vector2.new(0, 0)
+
+-- Fator de suavidade (0 = instantâneo, 0.9 = muito suave)
+local SMOOTH       = 0.12   -- levinho para resposta rápida no mobile
+
+-- ============================================================
+-- ENTRADA: TOUCH
+-- ============================================================
+UIS.TouchStarted:Connect(function(touch, _gameProcessed)
+    isTouching = true
+    targetPos  = Vector2.new(touch.Position.X, touch.Position.Y)
+    smoothPos  = targetPos
+    TouchBall.Visible = true
+
+    -- Animação de aparecimento
+    TouchBall.Size = UDim2.fromOffset(24, 24)
+    TweenService:Create(
+        TouchBall,
+        TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        { Size = UDim2.fromOffset(48, 48) }
+    ):Play()
+end)
+
+UIS.TouchMoved:Connect(function(touch, _gameProcessed)
+    if isTouching then
+        targetPos = Vector2.new(touch.Position.X, touch.Position.Y)
+    end
+end)
+
+UIS.TouchEnded:Connect(function(_touch, _gameProcessed)
+    isTouching = false
+
+    -- Animação de desaparecimento
+    local tween = TweenService:Create(
+        TouchBall,
+        TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+        { Size = UDim2.fromOffset(12, 12) }
+    )
+    tween:Play()
+    tween.Completed:Connect(function()
+        if not isTouching then
+            TouchBall.Visible = false
+            TouchBall.Size    = UDim2.fromOffset(48, 48)
+        end
+    end)
+end)
+
+-- ============================================================
+-- ENTRADA: MOUSE (PC / Studio)
+-- ============================================================
+UIS.InputBegan:Connect(function(input, _gameProcessed)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        isTouching = true
+        targetPos  = Vector2.new(input.Position.X, input.Position.Y)
+        smoothPos  = targetPos
+        TouchBall.Visible = true
+
+        TouchBall.Size = UDim2.fromOffset(24, 24)
+        TweenService:Create(
+            TouchBall,
+            TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+            { Size = UDim2.fromOffset(48, 48) }
+        ):Play()
+    end
+end)
+
+UIS.InputChanged:Connect(function(input)
+    -- Mouse se movendo (com ou sem clique)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        targetPos = Vector2.new(input.Position.X, input.Position.Y)
+        if not isTouching then
+            -- Bola "fantasma" menor ao apenas mover o mouse
+            TouchBall.Visible = true
+        end
+    end
+end)
+
+UIS.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        isTouching = false
+
+        local tween = TweenService:Create(
+            TouchBall,
+            TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+            { Size = UDim2.fromOffset(32, 32) }
+        )
+        tween:Play()
+        tween.Completed:Connect(function()
+            if not isTouching then
+                TweenService:Create(
+                    TouchBall,
+                    TweenInfo.new(0.1),
+                    { Size = UDim2.fromOffset(48, 48) }
+                ):Play()
+            end
+        end)
+    end
+end)
+
+-- ============================================================
+-- LOOP: RGB + INTERPOLAÇÃO SUAVE
+-- ============================================================
+-- Adicionar ao Heartbeat já existente no script original:
+-- (Se quiser separado, use um novo RunService.Heartbeat:Connect)
+
+RunService.Heartbeat:Connect(function(dt)
+    -- ── RGB na bola ──────────────────────────────────────────
+    local ballColor = getRGBColor(1.5)   -- offset diferente do menu
+
+    BallStroke.Color           = ballColor
+    BallGlow.BackgroundColor3  = ballColor
+
+    -- ── Interpolação suave de posição ─────────────────────────
+    smoothPos = smoothPos:Lerp(targetPos, SMOOTH)
+
+    TouchBall.Position = UDim2.fromOffset(
+        smoothPos.X,
+        smoothPos.Y
+    )
+
+    -- ── Pulso leve na borda ao tocar ──────────────────────────
+    if isTouching then
+        local pulse = 1 + math.sin(tick() * 8) * 0.08
+        BallStroke.Thickness = 2.5 * pulse
+    else
+        BallStroke.Thickness = 2.5
+    end
+end)
+
+-- ============================================================
+-- NOTAS DE INTEGRAÇÃO
+-- ============================================================
+--[[
+  Como usar:
+  1. Cole este bloco DENTRO do mesmo LocalScript do Element Ruby,
+     logo APÓS a seção de DRAG (linha ~2252 do original).
+  2. As variáveis UIS, TweenService, RunService, ScreenGui e
+     getRGBColor() já existem no script original — não redeclare.
+  3. Se quiser usar em LocalScript separado, declare as variáveis:
+       local Players      = game:GetService("Players")
+       local UIS          = game:GetService("UserInputService")
+       local TweenService = game:GetService("TweenService")
+       local RunService   = game:GetService("RunService")
+       local ScreenGui    = -- referência ao seu ScreenGui
+       local function getRGBColor(offset)
+           offset = offset or 0
+           local t = tick() * 0.8 + offset
+           return Color3.new(
+               math.abs(math.sin(t)),
+               math.abs(math.sin(t + 2*math.pi/3)),
+               math.abs(math.sin(t + 4*math.pi/3))
+           )
+       end
+
+  Personalizações rápidas:
+    TouchBall.Size      → muda o tamanho da bola (padrão 48x48)
+    BallStroke.Thickness → espessura do contorno (padrão 2.5)
+    SMOOTH              → 0.05 = super suave / 0.3 = mais direto
+    offset (getRGBColor)→ muda a fase da cor (diferente do menu)
+--]]
 
 -- ============================================================
 -- MINIMIZAR / MAXIMIZAR
